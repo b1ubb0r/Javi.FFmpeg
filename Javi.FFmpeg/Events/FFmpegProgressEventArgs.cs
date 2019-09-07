@@ -1,4 +1,3 @@
-using Javi.FFmpeg.Models;
 using System;
 
 namespace Javi.FFmpeg

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Javi.FFmpeg
 {
@@ -66,16 +67,14 @@ namespace Javi.FFmpeg
 		/// <param name="ffmpegCommandLine">The ffmpeg commandline parameters.</param>
 		/// <param name="cancellationToken">The cancellation token to cancel a running ffmpeg process.</param>
 		/// <exception cref="ArgumentNullException">When ffmpegCommand is null or whitespace or empty.</exception>
-		public void Run(string inputFile, string outputFile, string ffmpegCommandLine, CancellationToken cancellationToken = default)
+		public async Task Run(string inputFile, string outputFile, string ffmpegCommandLine, CancellationToken cancellationToken = default)
 		{
 			if (string.IsNullOrWhiteSpace(ffmpegCommandLine))
 			{
 				throw new ArgumentNullException("ffmpegCommand");
 			}
 
-			var input = new ConversionInput { CommandLine = ffmpegCommandLine, InputFile = inputFile, OutputFile = outputFile };
-
-			FFmpegRunner(input, cancellationToken);
+			await StartConversion(new ConversionInput { CommandLine = ffmpegCommandLine, InputFile = inputFile, OutputFile = outputFile }, cancellationToken);
 		}
 
 		/// <summary>
@@ -85,9 +84,9 @@ namespace Javi.FFmpeg
 		/// <param name="outputFile">The output file.</param>
 		/// <param name="subtitleTrack">The subtitle text stream to extract. This number is zero based. Omit to extract the first subtitle stream.</param>
 		/// <param name="cancellationToken">The cancellation token to cancel a running ffmpeg process.</param>
-		public void ExtractSubtitle(string inputFile, string outputFile, int subtitleTrack = 0, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task ExtractSubtitle(string inputFile, string outputFile, int subtitleTrack = 0, CancellationToken cancellationToken = default)
 		{
-			Run(inputFile, outputFile, string.Format($"-i \"{inputFile}\" -vn -an -map 0:s:{subtitleTrack} -c:s:0 srt \"{outputFile}\""), cancellationToken);
+			await Run(inputFile, outputFile, string.Format($"-i \"{inputFile}\" -vn -an -map 0:s:{subtitleTrack} -c:s:0 srt \"{outputFile}\""), cancellationToken);
 		}
 
 		/// <summary>
@@ -97,9 +96,9 @@ namespace Javi.FFmpeg
 		/// <param name="outputFile">Image file.</param>
 		/// <param name="seekPosition">The seek position.</param>
 		/// <param name="cancellationToken">The cancellation token to cancel a running ffmpeg process.</param>
-		public void GetThumbnail(string inputFile, string outputFile, TimeSpan seekPosition, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task GetThumbnail(string inputFile, string outputFile, TimeSpan seekPosition, CancellationToken cancellationToken = default)
 		{
-			Run(inputFile, outputFile,
+			await Run(inputFile, outputFile,
 				((FormattableString)$"-ss {seekPosition.TotalSeconds} -i \"{inputFile}\" -vframes 1  \"{outputFile}\"").ToString(CultureInfo.InvariantCulture),
 				cancellationToken);
 		}
@@ -112,9 +111,9 @@ namespace Javi.FFmpeg
 		/// <param name="start">The starttime in seconds.</param>
 		/// <param name="end">The endtime in seconds.</param>
 		/// <param name="cancellationToken">The cancellation token to cancel a running ffmpeg process.</param>
-		public void CutMedia(string inputFile, string outputFile, TimeSpan start, TimeSpan end, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task CutMedia(string inputFile, string outputFile, TimeSpan start, TimeSpan end, CancellationToken cancellationToken = default)
 		{
-			Run(inputFile, outputFile,
+			await Run(inputFile, outputFile,
 				((FormattableString)$"-ss {start} -to {end} -i \"{inputFile}\" -map 0:v? -c copy  -map 0:a? -c copy -map 0:s? -c copy \"{outputFile}\"").ToString(CultureInfo.InvariantCulture),
 				cancellationToken);
 		}
@@ -128,10 +127,10 @@ namespace Javi.FFmpeg
 		/// <param name="bitRate">The bit rate.</param>
 		/// <param name="samplingRate">The sampling rate.</param>
 		/// <param name="cancellationToken">The cancellation token to cancel a running ffmpeg process.</param>
-		public void ConvertAudioToAC3(string inputFile, string outputFile, int audioTrack, int bitRate, int samplingRate, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task ConvertAudioToAC3(string inputFile, string outputFile, int audioTrack, int bitRate, int samplingRate, CancellationToken cancellationToken = default)
 		{
-			Run(inputFile, outputFile,
-				string.Format($" -hwaccel auto -i \"{inputFile}\" -map {audioTrack} -c:s copy -c:v copy -c:a ac3 -b:a {bitRate} -ar {samplingRate} \"{outputFile}\""),
+			await Run(inputFile, outputFile,
+				$" -hwaccel auto -i \"{inputFile}\" -map {audioTrack} -c:s copy -c:v copy -c:a ac3 -b:a {bitRate} -ar {samplingRate} \"{outputFile}\"",
 				cancellationToken);
 		}
 
@@ -142,105 +141,109 @@ namespace Javi.FFmpeg
 		/// <param name="outputFile">The output file.</param>
 		/// <param name="videoTrack">The video track.</param>
 		/// <param name="cancellationToken">The cancellation token to cancel a running ffmpeg process.</param>
-		public void ConvertVideoToAVC(string inputFile, string outputFile, int videoTrack, CancellationToken cancellationToken = default(CancellationToken))
+		public async Task ConvertVideoToAVC(string inputFile, string outputFile, int videoTrack, CancellationToken cancellationToken = default)
 		{
-			Run(inputFile, outputFile,
-				string.Format($" -hwaccel auto -i \"{inputFile}\" -map {videoTrack} -c:a copy -c:s copy -c:v libx264 \"{outputFile}\""),
+			await Run(inputFile, outputFile,
+				$" -hwaccel auto -i \"{inputFile}\" -map {videoTrack} -c:a copy -c:s copy -c:v libx264 \"{outputFile}\"",
 				cancellationToken);
 		}
 
-		private void FFmpegRunner(ConversionInput input, CancellationToken cancellationToken)
+		private Task StartConversion(ConversionInput input, CancellationToken cancellationToken)
 		{
-			var receivedMessagesLog = new List<string>();
-			Exception caughtException = null;
-
-			var processStartInfo = GenerateStartInfo(input.CommandLine);
-
-			OnData?.Invoke(this, new FFmpegRawDataEventArgs(input.CommandLine));
-
-			using (FFmpegProcess = Process.Start(processStartInfo))
+			return Task.Run(() =>
 			{
-				FFmpegProcess.ErrorDataReceived += (sender, received) =>
+				var receivedMessagesLog = new List<string>();
+				Exception caughtException = null;
+
+				var processStartInfo = GenerateStartInfo(input.CommandLine);
+
+				OnData?.Invoke(this, new FFmpegRawDataEventArgs(input.CommandLine));
+
+				using (FFmpegProcess = Process.Start(processStartInfo))
 				{
-					if (received.Data == null)
+					FFmpegProcess.ErrorDataReceived += (sender, received) =>
+					{
+						if (received.Data == null)
+						{
+							return;
+						}
+
+						try
+						{
+							receivedMessagesLog.Insert(0, received.Data);
+
+							OnData?.Invoke(this, new FFmpegRawDataEventArgs(received.Data));
+
+							if (RegexEngine.HasProgressData(received.Data))
+							{
+								OnProgress?.Invoke(this, new FFmpegProgressEventArgs(RegexEngine.GetProgressData(received.Data, input)));
+							}
+							else if (RegexEngine.HasConversionCompleted(received.Data))
+							{
+								OnCompleted?.Invoke(this, new FFmpegCompletedEventArgs(RegexEngine.GetConversionCompletedData(received.Data, input)));
+							}
+						}
+						catch (Exception ex)
+						{
+							// catch the exception and kill the process since we're in a faulted state
+							caughtException = ex;
+
+							try
+							{
+								FFmpegProcess.Kill();
+							}
+							catch (InvalidOperationException)
+							{
+								// Swallow exceptions that are thrown when killing the process, ie. the application is ending naturally before we get a chance to kill it.
+							}
+						}
+					};
+
+					FFmpegProcess.BeginErrorReadLine();
+					if (cancellationToken != null)
+					{
+						while (!FFmpegProcess.WaitForExit(100))
+						{
+							if (!cancellationToken.IsCancellationRequested)
+							{
+								continue;
+							}
+
+							try
+							{
+								FFmpegProcess.Kill();
+							}
+							catch (Win32Exception)
+							{
+								// The associated process could not be terminated or the process is terminating.
+							}
+						}
+					}
+					else
+					{
+						FFmpegProcess.WaitForExit();
+					}
+
+					if (cancellationToken.IsCancellationRequested)
+					{
+						cancellationToken.ThrowIfCancellationRequested();
+					}
+
+					if (FFmpegProcess.ExitCode == 0 && caughtException == null)
 					{
 						return;
 					}
 
-					try
+					if (FFmpegProcess.ExitCode != 1 && receivedMessagesLog.Count >= 2)
 					{
-						receivedMessagesLog.Insert(0, received.Data);
-
-						OnData?.Invoke(this, new FFmpegRawDataEventArgs(received.Data));
-
-						if (RegexEngine.HasProgressData(received.Data))
-						{
-							OnProgress?.Invoke(this, new FFmpegProgressEventArgs(RegexEngine.GetProgressData(received.Data, input)));
-						}
-						else if (RegexEngine.HasConversionCompleted(received.Data))
-						{
-							OnCompleted?.Invoke(this, new FFmpegCompletedEventArgs(RegexEngine.GetConversionCompletedData(received.Data, input)));
-						}
+						throw new FFmpegException(FFmpegProcess.ExitCode + ": " + receivedMessagesLog[1] + receivedMessagesLog[0], caughtException);
 					}
-					catch (Exception ex)
+					else
 					{
-						// catch the exception and kill the process since we're in a faulted state
-						caughtException = ex;
-
-						try
-						{
-							FFmpegProcess.Kill();
-						}
-						catch (InvalidOperationException)
-						{
-							// Swallow exceptions that are thrown when killing the process, ie. the application is ending naturally before we get a chance to kill it.
-						}
-					}
-				};
-
-				FFmpegProcess.BeginErrorReadLine();
-				if (cancellationToken != null)
-				{
-					while (!FFmpegProcess.WaitForExit(100))
-					{
-						if (!cancellationToken.IsCancellationRequested)
-						{
-							continue;
-						}
-
-						try
-						{
-							FFmpegProcess.Kill();
-						}
-						catch (Win32Exception)
-						{
-							// The associated process could not be terminated or the process is terminating.
-						}
+						throw new FFmpegException(string.Format($"ffmpeg exited with exitcode {FFmpegProcess.ExitCode}"), caughtException);
 					}
 				}
-
-				FFmpegProcess.WaitForExit();
-
-
-				if (cancellationToken.IsCancellationRequested)
-				{
-					cancellationToken.ThrowIfCancellationRequested();
-				}
-
-				if (FFmpegProcess.ExitCode == 0 && caughtException == null)
-				{
-					return;
-				}
-
-				if (FFmpegProcess.ExitCode != 1 && receivedMessagesLog.Count >= 2)
-				{
-					throw new FFmpegException(FFmpegProcess.ExitCode + ": " + receivedMessagesLog[1] + receivedMessagesLog[0], caughtException);
-				}
-				else
-				{
-					throw new FFmpegException(string.Format($"ffmpeg exited with exitcode {FFmpegProcess.ExitCode}"), caughtException);
-				}
-			}
+			});
 		}
 
 		private ProcessStartInfo GenerateStartInfo(string arguments)
