@@ -1,5 +1,4 @@
 ﻿using Javi.FFmpeg;
-using Javi.FFmpeg.Extensions;
 using Microsoft.Win32;
 using System;
 using System.IO;
@@ -10,268 +9,279 @@ using System.Windows;
 
 namespace Demo
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
-    public partial class MainWindow : Window
-    {
-        // Set this to the location of ffmpeg.exe on your machine:
-        private string FFmpegFileName = @"D:\Projecten\Tools\ffmpeg\Executable\bin\ffmpeg.exe";
+	/// <summary>
+	/// Interaction logic for MainWindow.xaml
+	/// </summary>
+	public partial class MainWindow : Window
+	{
+		// Set this to the location of ffmpeg.exe on your machine:
+		private string FFmpegFileName = @"B:\Git\everything\Desktop\Tools\MkvConverter\MkvConverter\libs\ffmpeg.exe";
 
-        private string InputFile;
+		private string InputFile;
 
-        // Note that cancellation is only implemented in this demo in method ButtonConvertEAC_Click
-        private CancellationTokenSource CancellationTokenSource;
+		// Note that cancellation is only implemented in this demo in method ButtonConvertEAC_Click
+		private CancellationTokenSource CancellationTokenSource;
 
-        public MainWindow()
-        {
-            InitializeComponent();
-        }
+		public MainWindow()
+		{
+			InitializeComponent();
+		}
 
-        private void ButtonRun_Click(object sender, RoutedEventArgs e)
-        {
-            OutputText("***Start FFmpeg");
+		private async void ButtonRun_Click(object sender, RoutedEventArgs e)
+		{
+			OutputText("***Start FFmpeg");
 
-            using (var ffmpeg = new FFmpeg(FFmpegFileName))
-            {
-                string inputFile = "Sample.mp4";
-                string outputFile = "Sample.mkv";
-                string commandLine = string.Format($"-i \"{inputFile}\" \"{outputFile}\"");
+			using (var ffmpeg = new FFmpeg(FFmpegFileName))
+			{
+				string inputFile = "Sample.mp4";
+				string outputFile = "Sample.mkv";
+				string commandLine = string.Format($"-i \"{inputFile}\" \"{outputFile}\"");
 
-                ffmpeg.Run(inputFile, outputFile, commandLine);
-            }
+				await ffmpeg.Run(inputFile, outputFile, commandLine);
+			}
 
-            OutputText("***End FFmpeg");
-        }
+			OutputText("***End FFmpeg");
+		}
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (this.CancellationTokenSource != null)
-                {
-                    this.CancellationTokenSource.Cancel();
-                }
-            }
-            catch (ObjectDisposedException)
-            {
-                // cancel was not possible, tokensource was already disposed
-            }
-        }
+		private void Cancel_Click(object sender, RoutedEventArgs e)
+		{
+			try
+			{
+				if (this.CancellationTokenSource != null)
+				{
+					this.CancellationTokenSource.Cancel();
+				}
+			}
+			catch (ObjectDisposedException)
+			{
+				// cancel was not possible, tokensource was already disposed
+			}
+		}
 
-        private void Clear_Click(object sender, RoutedEventArgs e)
-        {
-            this.TextBlockMediaInfo.Text = string.Empty;
-        }
+		private void Clear_Click(object sender, RoutedEventArgs e)
+		{
+			this.TextBlockMediaInfo.Text = string.Empty;
+		}
 
-        private void GrabThumbnail()
-        {
-            this.InputFile = SelectFile(this.InputFile);
-            if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
+		private async Task GrabThumbnail()
+		{
+			this.InputFile = SelectFile(this.InputFile);
+			if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
 
-            OutputText("***Start grab thumbnail");
+			OutputText("***Start grab thumbnail");
 
-            using (var ffmpeg = new FFmpeg(FFmpegFileName))
-            {
-                ffmpeg.OnCompleted += (sender, e) => { OutputText(string.Format($"complete event: {e.MuxingOverhead} {e.TotalDuration}")); };
+			using (var ffmpeg = new FFmpeg(FFmpegFileName))
+			using (this.CancellationTokenSource = new CancellationTokenSource())
+			{
+				var token = this.CancellationTokenSource.Token;
 
-                // Grab thumbnails
-                // For this sample thumbnails from 0:07:28.600 to 0:07:54.200 are grabbed every 42ms
-                // the loop here assumes a typical value for framerate: (24000/1001) == 23.976 fps === 42 ms
-                int startPosition = (7 * 60 + 28) * 1000 + 600; // start at 7min54sec mark, in milliseconds
-                int duration = (0 * 60 + 25) * 1000 + 600; // duration to grab is 25sec and 600 milliseconds, in milliseconds
-                for (int i = 0; i < (duration / 42); i++)
-                {
-                    OutputText(string.Format($"{i} / {(int)(duration / 42)}"));
+				ffmpeg.OnCompleted += (sender, e) => { OutputText(string.Format($"complete event: {e.MuxingOverhead} {e.TotalDuration}")); };
 
-                    TimeSpan seekPosition = TimeSpan.FromMilliseconds(startPosition + i * 42);
+				// Grab thumbnails
+				// For this sample thumbnails from 0:07:28.600 to 0:07:54.200 are grabbed every 42ms
+				// the loop here assumes a typical value for framerate: (24000/1001) == 23.976 fps === 42 ms
+				int startPosition = (7 * 60 + 28) * 1000 + 600; // start at 7min54sec mark, in milliseconds
+				int duration = (0 * 60 + 25) * 1000 + 600; // duration to grab is 25sec and 600 milliseconds, in milliseconds
+				for (int i = 0; i < (duration / 42); i++)
+				{
+					OutputText(string.Format($"{i} / {(int)(duration / 42)}"));
 
-                    int hours = seekPosition.Hours;
-                    int minutes = seekPosition.Minutes;
-                    int seconds = seekPosition.Seconds;
-                    int milliseconds = seekPosition.Milliseconds;
-                    string timeString = hours.ToString("D2") + "." + minutes.ToString("D2") + "." + seconds.ToString("D2") + "." + milliseconds.ToString("D3");
-                    string outputFile = Path.Combine(Path.GetDirectoryName(InputFile), Path.GetFileNameWithoutExtension(InputFile) + " " + timeString + ".jpg");
+					TimeSpan seekPosition = TimeSpan.FromMilliseconds(startPosition + i * 42);
 
-                    ffmpeg.GetThumbnail(InputFile, outputFile, seekPosition);
-                }
-            }
+					int hours = seekPosition.Hours;
+					int minutes = seekPosition.Minutes;
+					int seconds = seekPosition.Seconds;
+					int milliseconds = seekPosition.Milliseconds;
+					string timeString = hours.ToString("D2") + "." + minutes.ToString("D2") + "." + seconds.ToString("D2") + "." + milliseconds.ToString("D3");
+					string outputFile = Path.Combine(Path.GetDirectoryName(InputFile), Path.GetFileNameWithoutExtension(InputFile) + " " + timeString + ".jpg");
 
-            OutputText("***End grab thumbnail");
-        }
+					try
+					{
+						await ffmpeg.GetThumbnail(InputFile, outputFile, seekPosition, token);
+					}
+					catch (OperationCanceledException)
+					{
+						OutputText("***Operation cancelled *****");
+						break;
+					}
+				}
+			}
 
-        private async void ButtonGrabThumbnail_Click(object sender, RoutedEventArgs e)
-        {
-            await Task.Run(() => GrabThumbnail());
-        }
+			OutputText("***End grab thumbnail");
+		}
 
-        private async void ButtonExtractSrt_Click(object sender, RoutedEventArgs e)
-        {
-            this.InputFile = SelectFile(this.InputFile);
-            if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
+		private async void ButtonGrabThumbnail_Click(object sender, RoutedEventArgs e)
+		{
+			await GrabThumbnail();
+		}
 
-            using (var ffmpeg = new FFmpeg(FFmpegFileName))
-            {
-                ffmpeg.OnProgress += OnProgressEvent;
-                ffmpeg.OnCompleted += OnCompletedEvent;
-                ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
+		private async void ButtonExtractSrt_Click(object sender, RoutedEventArgs e)
+		{
+			this.InputFile = SelectFile(this.InputFile);
+			if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
 
-                OutputText("***Start extract srt");
+			using (var ffmpeg = new FFmpeg(FFmpegFileName))
+			{
+				ffmpeg.OnProgress += OnProgressEvent;
+				ffmpeg.OnCompleted += OnCompletedEvent;
+				ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
 
-                try
-                {
-                    await Task.Run(() => ffmpeg.ExtractSubtitle(this.InputFile, Path.ChangeExtension(InputFile, "srt"), 0));
-                }
-                catch (Exception ex)
-                {
-                    OutputText("!!!! Exception: " + ex.Message);
-                }
+				OutputText("***Start extract srt");
 
-                OutputText("***Ready extract srt");
-            }
-        }
+				try
+				{
+					await ffmpeg.ExtractSubtitle(this.InputFile, Path.ChangeExtension(InputFile, "srt"), 0);
+				}
+				catch (Exception ex)
+				{
+					OutputText("!!!! Exception: " + ex.Message);
+				}
 
-        private async void ButtonCutVideo_Click(object sender, RoutedEventArgs e)
-        {
-            this.InputFile = SelectFile(this.InputFile);
-            if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
+				OutputText("***Ready extract srt");
+			}
+		}
 
-            string outputFile = Path.Combine(Path.GetDirectoryName(InputFile), Path.GetFileNameWithoutExtension(InputFile) + "_Cut" + Path.GetExtension(InputFile));
+		private async void ButtonCutVideo_Click(object sender, RoutedEventArgs e)
+		{
+			this.InputFile = SelectFile(this.InputFile);
+			if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
 
-            using (var ffmpeg = new FFmpeg(FFmpegFileName))
-            {
-                ffmpeg.OnProgress += OnProgressEvent;
-                ffmpeg.OnCompleted += OnCompletedEvent;
-                ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
+			string outputFile = Path.Combine(Path.GetDirectoryName(InputFile), Path.GetFileNameWithoutExtension(InputFile) + "_Cut" + Path.GetExtension(InputFile));
 
-                OutputText("***Start cut video");
+			using (var ffmpeg = new FFmpeg(FFmpegFileName))
+			{
+				ffmpeg.OnProgress += OnProgressEvent;
+				ffmpeg.OnCompleted += OnCompletedEvent;
+				ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
 
-                await Task.Run(() => ffmpeg.CutMedia(this.InputFile, outputFile, TimeSpan.FromMilliseconds((7 * 60 + 28) * 1000 + 600), TimeSpan.FromMilliseconds((7 * 60 + 54) * 1000 + 200)));
+				OutputText("***Start cut video");
 
-                OutputText("***Ready cut video");
-            }
-        }
+				await ffmpeg.CutMedia(this.InputFile, outputFile, TimeSpan.FromMilliseconds((7 * 60 + 28) * 1000 + 600), TimeSpan.FromMilliseconds((7 * 60 + 54) * 1000 + 200));
 
-        private async void ButtonConvertEAC_Click(object sender, RoutedEventArgs e)
-        {
-            this.InputFile = SelectFile(this.InputFile);
-            if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
+				OutputText("***Ready cut video");
+			}
+		}
 
-            var outputFile = Path.Combine(Path.GetDirectoryName(InputFile), Path.GetFileNameWithoutExtension(InputFile) + "_ConvertAC3" + Path.GetExtension(InputFile));
+		private async void ButtonConvertEAC_Click(object sender, RoutedEventArgs e)
+		{
+			this.InputFile = SelectFile(this.InputFile);
+			if (string.IsNullOrWhiteSpace(this.InputFile)) { return; }
 
-            using (var ffmpeg = new FFmpeg(FFmpegFileName))
-            {
-                ffmpeg.OnProgress += OnProgressEvent;
-                ffmpeg.OnCompleted += OnCompletedEvent;
-                ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
+			var outputFile = Path.Combine(Path.GetDirectoryName(InputFile), Path.GetFileNameWithoutExtension(InputFile) + "_ConvertAC3" + Path.GetExtension(InputFile));
 
-                OutputText("***Start convert eac");
+			using (var ffmpeg = new FFmpeg(FFmpegFileName))
+			{
+				ffmpeg.OnProgress += OnProgressEvent;
+				ffmpeg.OnCompleted += OnCompletedEvent;
+				ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
 
-                try
-                {
-                    using (this.CancellationTokenSource = new CancellationTokenSource())
-                    {
-                        var token = this.CancellationTokenSource.Token;
-                        await Task.Run(() => ffmpeg.ConvertAudioToAC3(this.InputFile, outputFile, 0, 640000, 48000, token), token);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    OutputText("***Operation cancelled *****");
-                }
-                catch (FFmpegException fe)
-                {
-                    OutputText(fe.Message + (fe.InnerException == null ? "" : ", " + fe.InnerException.Message));
-                }
+				OutputText("***Start convert eac");
 
-                OutputText("***Ready convert eac");
-            }
-        }
+				try
+				{
+					using (this.CancellationTokenSource = new CancellationTokenSource())
+					{
+						var token = this.CancellationTokenSource.Token;
+						await ffmpeg.ConvertAudioToAC3(this.InputFile, outputFile, 0, 640000, 48000, token);
+					}
+				}
+				catch (OperationCanceledException)
+				{
+					OutputText("***Operation cancelled *****");
+				}
+				catch (FFmpegException fe)
+				{
+					OutputText(fe.Message + (fe.InnerException == null ? "" : ", " + fe.InnerException.Message));
+				}
 
-        private async void ButtonStream_Click(object sender, RoutedEventArgs e)
-        {
-            string ffmpegCommand = @"ffmpeg -re -i udp://224.2.2.8:1008 -map 0:p:40 -map 0:p:29 -map 0:p:42 -map 0:p:17 -map 0:p:19 -vcodec mpeg2video -s 720x576 -r 25 -flags cgop+ilme -sc_threshold 1000000000 -b:v 2M -minrate:v 2M -maxrate:v 2M -bufsize:v 1.4M -acodec mp2 -ac 2 -b:a 192k -program title=xyz:st=0:st=1 -program title=zz:st=2:st=3 -program title=z2:st=4:st=5 -program title=SriShankara:st=6:st=7 -program title=Shubhvarta:st=8:st=9 -f mpegts udp://230.0.0.5:1008?pkt_size=1316";
-            using (var ffmpeg = new FFmpeg(FFmpegFileName))
-            {
-                ffmpeg.OnProgress += OnProgressEvent;
-                ffmpeg.OnCompleted += OnCompletedEvent;
-                ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
+				OutputText("***Ready convert eac");
+			}
+		}
 
-                OutputText("***Start capturing stream");
+		private async void ButtonStream_Click(object sender, RoutedEventArgs e)
+		{
+			string ffmpegCommand = @"ffmpeg -re -i udp://224.2.2.8:1008 -map 0:p:40 -map 0:p:29 -map 0:p:42 -map 0:p:17 -map 0:p:19 -vcodec mpeg2video -s 720x576 -r 25 -flags cgop+ilme -sc_threshold 1000000000 -b:v 2M -minrate:v 2M -maxrate:v 2M -bufsize:v 1.4M -acodec mp2 -ac 2 -b:a 192k -program title=xyz:st=0:st=1 -program title=zz:st=2:st=3 -program title=z2:st=4:st=5 -program title=SriShankara:st=6:st=7 -program title=Shubhvarta:st=8:st=9 -f mpegts udp://230.0.0.5:1008?pkt_size=1316";
+			using (var ffmpeg = new FFmpeg(FFmpegFileName))
+			{
+				ffmpeg.OnProgress += OnProgressEvent;
+				ffmpeg.OnCompleted += OnCompletedEvent;
+				ffmpeg.OnData += (s, args) => { OutputText(args.Data); };
 
-                try
-                {
-                    await Task.Run(() => ffmpeg.Run(ffmpegCommand, string.Empty, ffmpegCommand));
-                }
-                catch (FFmpegException fe)
-                {
-                    OutputText(fe.Message + (fe.InnerException == null ? "" : ", " + fe.InnerException.Message));
-                }
-                catch (Exception ex)
-                {
-                    OutputText(ex.Message);
-                }
+				OutputText("***Start capturing stream");
 
-                OutputText("***Ready capturing stream");
-            }
-        }
+				try
+				{
+					await ffmpeg.Run(ffmpegCommand, string.Empty, ffmpegCommand);
+				}
+				catch (FFmpegException fe)
+				{
+					OutputText(fe.Message + (fe.InnerException == null ? "" : ", " + fe.InnerException.Message));
+				}
+				catch (Exception ex)
+				{
+					OutputText(ex.Message);
+				}
 
-        private void OnProgressEvent(object sender, FFmpegProgressEventArgs e)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("ConvertProgressEvent");
-            sb.AppendLine($"    Bitrate: {e.Bitrate}");
-            sb.AppendLine($"    Fps: {e.Fps}");
-            sb.AppendLine($"    Frame: {e.Frame}");
-            sb.AppendLine($"    ProcessedDuration: {e.ProcessedDuration}");
-            sb.AppendLine($"    SizeKb: {e.SizeKb}");
-            sb.AppendLine($"    Speed: {e.Speed}");
-            sb.Append($"    TotalDuration: {e.TotalDuration}");
+				OutputText("***Ready capturing stream");
+			}
+		}
 
-            OutputText(sb.ToString());
-        }
+		private void OnProgressEvent(object sender, FFmpegProgressEventArgs e)
+		{
+			var sb = new StringBuilder();
+			sb.AppendLine("ConvertProgressEvent");
+			sb.AppendLine($"    Bitrate: {e.Bitrate}");
+			sb.AppendLine($"    Fps: {e.Fps}");
+			sb.AppendLine($"    Frame: {e.Frame}");
+			sb.AppendLine($"    ProcessedDuration: {e.ProcessedDuration}");
+			sb.AppendLine($"    SizeKb: {e.SizeKb}");
+			sb.AppendLine($"    Speed: {e.Speed}");
+			sb.Append($"    TotalDuration: {e.TotalDuration}");
 
-        private void OnCompletedEvent(object sender, FFmpegCompletedEventArgs e)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("ConversionCompleteEvent");
-            sb.AppendLine($"    MuxingOverhead: {e.MuxingOverhead}");
-            sb.Append($"    TotalDuration: {e.TotalDuration}");
+			OutputText(sb.ToString());
+		}
 
-            OutputText(sb.ToString());
-        }
+		private void OnCompletedEvent(object sender, FFmpegCompletedEventArgs e)
+		{
+			var sb = new StringBuilder();
+			sb.AppendLine("ConversionCompleteEvent");
+			sb.AppendLine($"    MuxingOverhead: {e.MuxingOverhead}");
+			sb.Append($"    TotalDuration: {e.TotalDuration}");
 
-        private string SelectFile(string defaultExt = "", string title = "")
-        {
-            string result = string.Empty;
+			OutputText(sb.ToString());
+		}
 
-            OpenFileDialog ofd = new OpenFileDialog
-            {
-                DefaultExt = defaultExt,
-                Title = title,
-            };
+		private string SelectFile(string defaultExt = "", string title = "")
+		{
+			string result = string.Empty;
 
-            if (ofd.ShowDialog() == true)
-            {
-                result = ofd.FileName;
-            }
+			OpenFileDialog ofd = new OpenFileDialog
+			{
+				DefaultExt = defaultExt,
+				Title = title,
+			};
 
-            return result;
-        }
+			if (ofd.ShowDialog() == true)
+			{
+				result = ofd.FileName;
+			}
 
-        private void OutputText(string text)
-        {
-            if (Application.Current == null) { return; }
-            if (Application.Current.Dispatcher.Thread != System.Threading.Thread.CurrentThread)
-            {
-                Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
-                    OutputText(text)));
-            }
-            else
-            {
-                this.TextBlockMediaInfo.Text += Environment.NewLine + text;
-                this.TextBlockMediaInfo.ScrollToEnd();
-            }
-        }
-    }
+			return result;
+		}
+
+		private void OutputText(string text)
+		{
+			if (Application.Current == null) { return; }
+			if (Application.Current.Dispatcher.Thread != System.Threading.Thread.CurrentThread)
+			{
+				Application.Current.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
+					OutputText(text)));
+			}
+			else
+			{
+				this.TextBlockMediaInfo.Text += Environment.NewLine + text;
+				this.TextBlockMediaInfo.ScrollToEnd();
+			}
+		}
+	}
 }
